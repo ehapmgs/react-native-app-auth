@@ -38,6 +38,8 @@ export type AuthConfiguration = BaseAuthConfiguration & {
   customHeaders?: CustomHeaders;
   useNonce?: boolean;
   usePKCE?: boolean;
+  jwkEndPoint: String;
+  kid: String;
 };
 
 export interface AuthorizeResult {

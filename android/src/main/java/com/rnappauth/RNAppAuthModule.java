@@ -6,12 +6,17 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
+
 import androidx.annotation.Nullable;
 import androidx.browser.customtabs.CustomTabsCallback;
 import androidx.browser.customtabs.CustomTabsClient;
 import androidx.browser.customtabs.CustomTabsServiceConnection;
 
+import com.auth0.jwk.Jwk;
+import com.auth0.jwk.JwkProvider;
+import com.auth0.jwk.UrlJwkProvider;
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -42,11 +47,15 @@ import net.openid.appauth.TokenRequest;
 import net.openid.appauth.connectivity.ConnectionBuilder;
 import net.openid.appauth.connectivity.DefaultConnectionBuilder;
 
+import java.net.URL;
+import java.security.PublicKey;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CountDownLatch;
+
+import io.jsonwebtoken.Jwts;
 
 public class RNAppAuthModule extends ReactContextBaseJavaModule implements ActivityEventListener {
 
@@ -62,6 +71,8 @@ public class RNAppAuthModule extends ReactContextBaseJavaModule implements Activ
     private String clientSecret;
     private final AtomicReference<AuthorizationServiceConfiguration> mServiceConfiguration = new AtomicReference<>();
     private boolean isPrefetched = false;
+    private String jwkEndPoint;
+    private String kid;
 
     public RNAppAuthModule(ReactApplicationContext reactContext) {
         super(reactContext);
@@ -139,6 +150,8 @@ public class RNAppAuthModule extends ReactContextBaseJavaModule implements Activ
             final ReadableArray scopes,
             final ReadableMap additionalParameters,
             final ReadableMap serviceConfiguration,
+            final String jwkEndPoint,
+            final String kid,
             final Boolean usePKCE,
             final String clientAuthMethod,
             final Boolean dangerouslyAllowInsecureHttpRequests,
@@ -156,6 +169,8 @@ public class RNAppAuthModule extends ReactContextBaseJavaModule implements Activ
 
         // store args in private fields for later use in onActivityResult handler
         this.promise = promise;
+        this.jwkEndPoint = jwkEndPoint;
+        this.kid = kid;
         this.dangerouslyAllowInsecureHttpRequests = dangerouslyAllowInsecureHttpRequests;
         this.additionalParametersMap = additionalParametersMap;
         this.clientSecret = clientSecret;
@@ -326,8 +341,7 @@ public class RNAppAuthModule extends ReactContextBaseJavaModule implements Activ
                 public void onTokenRequestCompleted(
                         TokenResponse resp, AuthorizationException ex) {
                     if (resp != null) {
-                        WritableMap map = TokenResponseFactory.tokenResponseToMap(resp, response);
-                        authorizePromise.resolve(map);
+                        signatureVerification(resp, response);
                     } else {
                         promise.reject("Failed exchange token", getErrorMessage(ex));
                     }
@@ -343,6 +357,24 @@ public class RNAppAuthModule extends ReactContextBaseJavaModule implements Activ
             }
 
         }
+    }
+
+    private void signatureVerification(final TokenResponse resp, final AuthorizationResponse response) {
+        AsyncTask.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    JwkProvider provider = new UrlJwkProvider(new URL(jwkEndPoint));
+                    Jwk jwk = provider.get(kid);
+                    PublicKey publicKey = jwk.getPublicKey();
+                    Jwts.parser().setSigningKey(publicKey).parseClaimsJws(resp.idToken);
+                    WritableMap map = TokenResponseFactory.tokenResponseToMap(resp, response);
+                    promise.resolve(map);
+                } catch (Exception e) {
+                    promise.reject("Invalid Signature",e.getMessage());
+                }
+            }
+        });
     }
 
     /*

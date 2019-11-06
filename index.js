@@ -88,6 +88,8 @@ export const authorize = ({
   scopes,
   useNonce = true,
   usePKCE = true,
+  jwkEndPoint,
+  kid,
   additionalParameters,
   serviceConfiguration,
   clientAuthMethod = 'basic',
@@ -108,6 +110,8 @@ export const authorize = ({
     scopes,
     additionalParameters,
     serviceConfiguration,
+    jwkEndPoint,
+    kid,
   ];
 
   if (Platform.OS === 'android') {
